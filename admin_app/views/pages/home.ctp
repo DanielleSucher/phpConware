@@ -40,6 +40,7 @@
 <div class="admin_menu">
 <h1>User Administration</h1>
 <ul>
+<li><a href="/admin/users/registration_end">Change Registration End Date</a></li> 
 <li><a href="/admin/users/">Manage Users and Panelists</a></li>
 <li><a href="/admin/users/confirmations/">View User Confirmations</a></li>
 </ul>

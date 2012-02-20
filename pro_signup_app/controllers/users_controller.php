@@ -2,6 +2,7 @@
 class UsersController extends AppController {
 
 	var $name = 'Users';
+	var $uses = array( 'User', 'ConDay' );
 	var $helpers = array('Html', 'Form' );
 	
 //	function beforeFilter() {
@@ -38,6 +39,11 @@ class UsersController extends AppController {
 	}
 	
 	function register() {
+		$today = date('Y-m-d');
+		$registration_end_date = $this->ConDay->findByName('Registration_End');
+		$registration_end_date = $registration_end_date['ConDay']['date'];
+		$registration_end_date = date($registration_end_date);
+		//$registration_end_date = date('2012-06-01');
 		if (!empty($this->data)) {
 			if ($this->User->save($this->data)) {
 				$this->Session->setFlash('Thank you, your account has been created.');
@@ -48,6 +54,7 @@ class UsersController extends AppController {
 				$this->Session->setFlash('There was a problem creating this account. Please try again.');
 			}
 		}
+		$this->set(compact('today', 'registration_end_date'));
 	}
 	
 	function reset_password() {

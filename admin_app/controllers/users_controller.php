@@ -42,6 +42,48 @@ class UsersController extends AppController {
 		$this->set('users', $this->paginate());
 	}
 
+	function registration_end() {
+
+		$today = date('Y-m-d');
+		$registration_end_date = $this->ConDay->findByName('Registration_End');
+		$registration_end_date = $registration_end_date['ConDay']['date'];
+		$registration_end_date = date($registration_end_date);
+		$this->set(compact('today', 'registration_end_date'));
+
+		$success = TRUE;
+
+		// Save new registration end date
+		if (!empty($this->data)) {
+			$error_msg = 'The registration date did not change. Please try again.';
+
+			if($this->data['User']) {
+
+			$date = $this->data['User']['date'];
+
+				if($date) {
+
+					//delete prior registration end date
+					$this->ConDay->deleteAll(array(
+						'ConDay.name' => 'Registration_End',
+					));
+
+					//save new registration end date
+					$this->ConDay->create();
+					$conday_data = array();
+					$conday_data['ConDay']['name'] = 'Registration_End';
+					$conday_data['ConDay']['date'] = $date;
+					$this->ConDay->save($conday_data); 
+				}
+				if ($success) {
+					$this->Session->setFlash(__('The new final registration date has been saved', true));
+					$this->redirect('/users/registration_end');
+				} else {
+					$this->Session->setFlash(__($error_msg, true));
+				}
+			}
+		}
+	}
+
 	function view($id = null) {
 		if (!$id) {
 			$this->Session->setFlash(__('Invalid user', true));
