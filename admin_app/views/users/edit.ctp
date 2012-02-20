@@ -6,13 +6,13 @@
 	<?php
 		echo $this->Form->input('id');
 //		echo $this->Form->input('username');
-		echo $this->Form->input('password');
-		echo $this->Form->input('password_confirmation', array('type'=>'password'));
+//		echo $this->Form->input('password');
+//		echo $this->Form->input('password_confirmation', array('type'=>'password'));
 		echo $this->Form->input('first_name', array('label'=>'First Name'));
 		echo $this->Form->input('last_name', array('label'=>'Last Name'));
 		echo $this->Form->input('name', array('label'=>'Display Name'));
 		if($admin) {
-			echo $this->Form->input('roles');
+			echo $this->Form->input('roles', array('options' => array('user','admin'), 'default' => 'user'));
 		}
 	?>
 	</fieldset>
