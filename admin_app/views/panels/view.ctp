@@ -26,6 +26,11 @@
 			<?php echo $panel['Panel']['url_slug']; ?>
 			&nbsp;
 		</dd>
+		<dt<?php if ($i % 2 == 0) echo $class;?>><?php __('Current Time Slot'); ?></dt>
+		<dd<?php if ($i++ % 2 == 0) echo $class;?>>
+			<?php echo $slot['ConDay']['name'];?> - <?php echo $slot_name;?> (slot id <?php echo $slot_id;?>)
+			&nbsp;
+		</dd>
 		<dt<?php if ($i % 2 == 0) echo $class;?>><?php __('Panel Length'); ?></dt>
 		<dd<?php if ($i++ % 2 == 0) echo $class;?>>
 			<?php echo $this->Html->link($panel['PanelLength']['name'], array('controller' => 'panel_lengths', 'action' => 'view', $panel['PanelLength']['id'])); ?>

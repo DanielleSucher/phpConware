@@ -15,12 +15,21 @@ class PanelsController extends AppController {
 	//helper functions for the panelist_edit and schedule_new views
 	function delete_adjacent_conflicts($id,$adjacent_conflicts,$previous_slot,$next_slot) {
 		if(in_array($id, $adjacent_conflicts)) {
+			$adjacent_conflicts_all_timeslots = $this->PanelParticipant->find('all', array(
+		        'recursive' => 1,
+		        'conditions' => array(
+		        	'PanelParticipant.user_id' => $id, 
+					"OR" => array(
+                		'PanelParticipant.day_time_slot_id = ' . $previous_slot,
+                		'PanelParticipant.day_time_slot_id = ' . $next_slot,
+            		),
+				),
+		    ));
+		    $adjacent_conflicts_by_panel_id = $this->hashListByKey($adjacent_conflicts_all_timeslots, 'PanelParticipant', 'panel_id');
+			$adjacent_conflict_panel_ids = array_keys($adjacent_conflicts_by_panel_id);
 			$conditions = array (
 				'PanelParticipant.user_id' => $id, 
-				"OR" => array(
-                	'PanelParticipant.day_time_slot_id = ' . $previous_slot,
-                	'PanelParticipant.day_time_slot_id = ' . $next_slot,
-            	),
+                'PanelParticipant.panel_id IN ('. implode(',', $adjacent_conflict_panel_ids) . ')',
 			);
 			$this->PanelParticipant->deleteAll($conditions); 
 		}
@@ -28,9 +37,19 @@ class PanelsController extends AppController {
 
 	function delete_booked_conflicts($id,$booking_conflicts,$slot_id) {
 		if(array_key_exists($id, $booking_conflicts)) {
+			$booked_conflicts_all_timeslots = $this->PanelParticipant->find('all', array(
+		        'recursive' => 1,
+		        'conditions' => array(
+		        	'PanelParticipant.user_id' => $id, 
+                	'PanelParticipant.day_time_slot_id' => $slot_id,
+				),
+		    ));
+		    $booked_conflicts_by_panel_id = $this->hashListByKey($booked_conflicts_all_timeslots, 'PanelParticipant', 'panel_id');
+			$booked_conflict_panel_ids = array_keys($booked_conflicts_by_panel_id);
+
 			$conditions = array (
 				'PanelParticipant.user_id' => $id, 
-				'PanelParticipant.day_time_slot_id' => $slot_id,
+				'PanelParticipant.day_time_slot_id IN ('. implode(',', $booked_conflict_panel_ids) . ')',
 			);
 			$this->PanelParticipant->deleteAll($conditions); 
 		}
@@ -615,6 +634,12 @@ class PanelsController extends AppController {
 			$this->redirect(array('action' => 'index'));
 		}
 		$this->set('panel', $this->Panel->read(null, $id));
+
+		$scheduleInfo = $this->PanelSchedule->findByPanelId($id);
+		$slot = $this->DayTimeSlot->findById((int)$scheduleInfo['PanelSchedule']['day_time_slot_id']);
+		$slot_id = $scheduleInfo['DayTimeSlot']['id'];
+		$slot_name = strftime("%H:%M", strtotime($slot['TimeSlot']['start']));
+		$this->set(compact('slot', 'slot_id', 'slot_name'));
 	}
 
 	function add() {
@@ -782,6 +807,7 @@ class PanelsController extends AppController {
 		$this->set(compact('panels_sorted', 'panel_details', 'slot_details', 'all_participants'));
 	}
 	
+
 	function panelist_edit() {
 		$panel_id = (int)$this->params['named']['panel'];
 		$slot_id = (int)$this->params['named']['slot'];
