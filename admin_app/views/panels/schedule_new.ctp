@@ -42,102 +42,13 @@
 						
 <?php echo $this->Form->input('PanelSchedule.room_id'); ?>
 
-<h4>Select From Available Participants:</h4>
-<table>
-<thead>
-	<tr>
-	<th>Ldr</th>
-	<th>Mod</th>
-	<th>Pnlst</th>
-	<th>Name</th>
-	<th>Role Reqst</th>
-	<th>Rating</th>
-	<th>Avoids</th>
-	<th>Collabs</th>
-	<th>User Comment</th>
-	</tr>
-</thead>
-<tbody>
-<tr>
-	<td>
-		<input type="radio" name="data[PanelParticipant][leader]" value="0" <?php if($leader==0) echo 'checked="checked"';?> />
-	</td>
-	<td>
-		<input type="radio" name="data[PanelParticipant][moderator]" value="0" <?php if($moderator==0) echo 'checked="checked"';?> />
-	</td>
-	<td colspan="8">
-	No leader / moderator
-	</td>
-</tr>
-<?php 
-	foreach($participants as $pref) {
-		$rating_str = '';
-		if($pref['PanelPref']['panel_rating_id']) {
-			$rating_str = substr($pref['PanelRating']['description'], 0, 3);  // 1st 3 chars
-			$rating_str = str_replace(':', '', $rating_str);
-		}
-		$role_str = '';
-		$leading_role = FALSE;
-		if($pref['PanelPref']['opt_panelist']) {
-			$role_str .= 'Pnlst, ';
-		}
-		if($pref['PanelPref']['opt_leader']) {
-			$role_str .= 'Ldr, ';
-			$leading_role = TRUE;
-		}
-		if($pref['PanelPref']['opt_moderator']) {
-			$role_str .= 'Mod';
-			$leading_role = TRUE;
-		}
-		$user_id = $pref['PanelPref']['user_id'];
-		$is_panelist = !($leader==$user_id) && !($moderator==$user_id) && array_key_exists($user_id, $panelists_assigned);
-		$avoid_str = '';
-		if(array_key_exists($user_id, $user_avoids)) {
-			$people_avoid = $user_avoids[$user_id];
-			foreach($people_avoid as $person) {
-				$person_id = $person['User']['id'];
-				if(array_search($person_id, $participant_ids)) {
-					$avoid_str .= '<b>' . $person['User']['name'] . '</b>, ';
-				} else {
-					$avoid_str .= $person['User']['name'] . ', ';
-				}
-			}
-		} 
-		$collab_str = '';
-		if(array_key_exists($user_id, $user_collabs)) {
-			$people_collab = $user_collabs[$user_id];
-			foreach($people_collab as $person) {
-				$person_id = $person['User']['id'];
-				if(array_search($person_id, $participant_ids)) {
-					$collab_str .= '<b>' . $person['User']['name'] . '</b>, ';
-				} else {
-					$collab_str .= $person['User']['name'] . ', ';
-				}
-			}
-		} 
+<?php
+    // List users who want to participate in this panel
+    echo $this->element('schedule_participants');
+
+    // List users who want to watch this panel
+    // echo $this->element('schedule_watchers');
 ?>
-	<tr>
-		<td>
-			<input type="radio" name="data[PanelParticipant][leader]" title="leader" value="<?php echo $user_id;?>" <?php if($leader==$user_id) echo 'checked="checked"';?> />
-		</td>
-		<td>
-			<input type="radio" name="data[PanelParticipant][moderator]" title="moderator" value="<?php echo $user_id;?>" <?php if($moderator==$user_id) echo 'checked="checked"';?> />
-		</td>
-		<td>
-			<input type="checkbox" name="data[PanelParticipant][panelists][]" title="panelist" value="<?php echo $user_id;?>" <?php if($is_panelist) echo 'checked="checked"';?> />
-		</td>
-		<td><?php if($leading_role) echo '<b>';?><?php echo $pref['User']['name'];?><?php if($leading_role) echo '</b>';?>
-		</td>
-		<td><?php echo $role_str;?></td>
-		<td><?php echo $rating_str;?></td>
-		<td style="color: red;"><?php echo $avoid_str;?></td>
-		<td style="color: green;"><?php echo $collab_str;?></td>
-		<td><?php echo $pref['PanelPref']['comment'];?></td>
-	</tr>
-<?php 
-	} ?>
-</tbody>
-</table>
 
 <label>Add Panelist Ids:</label>
 <ol>
@@ -149,4 +60,8 @@
 	<li><input type="text" name="data[PanelParticipant][panelists][]" style="width: 3em; padding: 1px;" /></li>
 </ol>
 
+<input type="hidden" title="adjacent_panels_to_delete" id="adjacent_panels_to_delete" name="data[adjacent_panels_to_delete]" value="" />
+
 <?php echo $this->Form->end(__(' Schedule ', true));?>
+<div id="dialog-confirm"></div>
+<div id="dialog-adjacent-confirm"></div>

@@ -11,7 +11,441 @@ class PanelsController extends AppController {
 	);
 	
 	var $helpers = array('Form', 'Html', 'Javascript', 'Time', 'Util');
-	
+
+	//helper functions for the panelist_edit and schedule_new views
+	function delete_adjacent_conflicts($id,$adjacent_conflicts,$previous_slot,$next_slot) {
+		if(in_array($id, $adjacent_conflicts)) {
+			$conditions = array (
+				'PanelParticipant.user_id' => $id, 
+				"OR" => array(
+                	'PanelParticipant.day_time_slot_id = ' . $previous_slot,
+                	'PanelParticipant.day_time_slot_id = ' . $next_slot,
+            	),
+			);
+			$this->PanelParticipant->deleteAll($conditions); 
+		}
+	}
+
+	function delete_booked_conflicts($id,$booking_conflicts,$slot_id) {
+		if(array_key_exists($id, $booking_conflicts)) {
+			$conditions = array (
+				'PanelParticipant.user_id' => $id, 
+				'PanelParticipant.day_time_slot_id' => $slot_id,
+			);
+			$this->PanelParticipant->deleteAll($conditions); 
+		}
+	}
+
+
+	function save_panelists($slot_id,$panel_id) {
+		$next_slot = $slot_id + 1;
+        $previous_slot = $slot_id - 1;
+		// Prepare to identify booking conflicts to be deleted
+		$booking_conflicts = $this->PanelParticipant->find('all', array(
+            'recursive' => 1,
+            'conditions' => array(
+            	'PanelParticipant.day_time_slot_id = ' . $slot_id,
+            	'PanelParticipant.panel_id != ' . $panel_id,
+            ),
+            'order' => array('PanelParticipant.id DESC'),
+        ));
+        $booking_conflicts = $this->hashListByKey($booking_conflicts, 'PanelParticipant', 'user_id');
+        $booked_conflict_ids = array_keys($booking_conflicts);
+        // Prepare to identify adjacent panel conflicts to be deleted
+        $adjacent_conflicts = $this->data['adjacent_panels_to_delete'];
+        $adjacent_conflicts = explode(",", $adjacent_conflicts);
+
+		if($this->data['PanelParticipant']) {
+
+			$leader_id = (int)$this->data['PanelParticipant']['leader'];
+			if($leader_id) {
+				// Remove the leader from the panel they were previously assigned to in this timeslot, if any
+				$this->delete_booked_conflicts($leader_id,$booking_conflicts,$slot_id);
+
+				// Remove the leader from any adjacent panels, if any and if indicated
+				$this->delete_adjacent_conflicts($leader_id,$adjacent_conflicts,$previous_slot,$next_slot);
+
+				// Save Leader, if applicable
+				$this->PanelParticipant->create();
+				$leader_data = array();
+				$leader_data['PanelParticipant']['day_time_slot_id'] = $slot_id;
+				$leader_data['PanelParticipant']['panel_id'] = $panel_id;
+				$leader_data['PanelParticipant']['user_id'] = $leader_id;
+				$leader_data['PanelParticipant']['leader'] = 1;
+				$this->PanelParticipant->save($leader_data); 
+			}
+
+			$moderator_id = (int)$this->data['PanelParticipant']['moderator'];
+			if($moderator_id) {
+				// Remove the moderator from the panel they were previously assigned to in this timeslot, if any
+				$this->delete_booked_conflicts($moderator_id,$booking_conflicts,$slot_id);
+
+				// Remove the moderator from any adjacent panels, if any and if indicated
+				$this->delete_adjacent_conflicts($leader_id,$adjacent_conflicts,$previous_slot,$next_slot);
+
+				// Save Moderator, if applicable
+				$this->PanelParticipant->create();
+				$moderator_data = array();
+				$moderator_data['PanelParticipant']['day_time_slot_id'] = $slot_id;
+				$moderator_data['PanelParticipant']['panel_id'] = $panel_id;
+				$moderator_data['PanelParticipant']['user_id'] = $moderator_id;
+				$moderator_data['PanelParticipant']['moderator'] = 1;
+				$this->PanelParticipant->save($moderator_data);
+			}
+            // Save watchers
+            // if(array_key_exists('watchers', $this->data['PanelParticipant'])) {
+            //     $selected_watchers = $this->data['PanelParticipant']['watchers'];
+            // } else {
+            //     $selected_watchers = array();
+            // }
+            // foreach($selected_watchers as $watcher_id) {
+            //     $watcher_id = (int)$watcher_id;
+            //     if(!$watcher_id) {
+            //         continue;
+            //     }
+            //     $this->PanelParticipant->create();
+            //     $panelist_data = array();
+            //     $panelist_data['PanelParticipant']['day_time_slot_id'] = $slot_id;
+            //     $panelist_data['PanelParticipant']['panel_id'] = $panel_id;
+            //     $panelist_data['PanelParticipant']['user_id'] = $watcher_id;
+            //     $panelist_data['PanelParticipant']['watcher'] = 1;
+            //     $this->PanelParticipant->save($panelist_data);
+            // }
+			// Save other panelists
+			if(array_key_exists('panelists', $this->data['PanelParticipant'])) {
+				$selected_panelists = $this->data['PanelParticipant']['panelists'];
+			} else {
+				$selected_panelists = array();
+			}
+			foreach($selected_panelists as $panelist_id) {
+				$panelist_id = (int)$panelist_id;
+				if(!$panelist_id) {
+					continue;
+				}
+
+				// Remove the panelists from the panels they were previously assigned to in this timeslot, if any
+				$this->delete_booked_conflicts($panelist_id,$booking_conflicts,$slot_id);
+
+				// Remove the panelists from any adjacent panels, if any and if indicated
+				$this->delete_adjacent_conflicts($panelist_id,$adjacent_conflicts,$previous_slot,$next_slot);
+
+				// Save panelists
+				$this->PanelParticipant->create();
+				$panelist_data = array();
+				$panelist_data['PanelParticipant']['day_time_slot_id'] = $slot_id;
+				$panelist_data['PanelParticipant']['panel_id'] = $panel_id;
+				$panelist_data['PanelParticipant']['user_id'] = $panelist_id;
+				$panelist_data['PanelParticipant']['panelist'] = 1;
+				$this->PanelParticipant->save($panelist_data); 
+			}
+		}
+	}
+
+
+	   function define_participant_arrays($slot,$panel,$slot_id,$panel_id,$rooms,$user_conflicts_booked) {
+	   	$next_slot = $slot_id + 1;
+        $previous_slot = $slot_id - 1;
+		$this->PanelPref->unbindModel(array('belongsTo' => array('Panel')));
+		$participants = $this->PanelPref->find('all', array(
+			'recursive' => 1,
+			'conditions' => array(
+				'PanelPref.panel_id' => $panel_id,
+				'PanelPref.interest' => 2,
+			),
+			'order' => array('PanelPref.panel_rating_id DESC', 'User.name'),
+			'joins' => array(
+				array(
+					'table' => 'users',
+					'alias' => 'User',
+					'type' => 'inner',
+					'foreignKey' => false,
+					'conditions' => array('PanelPref.user_id = User.id'),
+				),
+				array(
+					'table' => 'user_time_slots',
+					'alias' => 'UserTimeSlot',
+					'type' => 'inner',
+					'foreignKey' => false,
+					'conditions' => array(
+						'UserTimeSlot.user_id = User.id',
+						'UserTimeSlot.day_time_slot_id = ' . $slot_id,
+						'UserTimeSlot.available = 1',
+					),
+				),
+			),
+		));
+        $watchers = $this->PanelPref->find('all', array(
+            'recursive' => 1,
+            'conditions' => array(
+                'PanelPref.panel_id' => $panel_id,
+                'PanelPref.interest' => 1,
+            ),
+            'order' => array('PanelPref.panel_rating_id DESC', 'User.name'),
+            'joins' => array(
+                array(
+                    'table' => 'users',
+                    'alias' => 'User',
+                    'type' => 'inner',
+                    'foreignKey' => false,
+                    'conditions' => array('PanelPref.user_id = User.id'),
+                ),
+                array(
+                    'table' => 'user_time_slots',
+                    'alias' => 'UserTimeSlot',
+                    'type' => 'inner',
+                    'foreignKey' => false,
+                    'conditions' => array(
+                        'UserTimeSlot.user_id = User.id',
+                        'UserTimeSlot.day_time_slot_id = ' . $slot_id,
+                        'UserTimeSlot.available = 1',
+                    ),
+                ),
+            ),
+        ));
+		$panelists_assigned = $this->PanelParticipant->find('all', array(
+			'conditions' => array(
+				'PanelParticipant.panel_id' => $panel_id,
+			),
+			'recursive' => -1,
+		));
+        $panelists_assigned = $this->hashByKey($panelists_assigned, 'PanelParticipant', 'user_id');
+        $watchers_assigned = $this->PanelParticipant->find('all', array(
+            'conditions' => array(
+                'PanelParticipant.panel_id' => $panel_id,
+                'PanelParticipant.watcher' => 1,
+            ),
+            'recursive' => -1,
+        ));
+        $watchers_assigned = $this->hashByKey($watchers_assigned, 'PanelParticipant', 'user_id');
+        $leader = $this->PanelParticipant->find('first', array(
+            'conditions' => array(
+                'PanelParticipant.panel_id' => $panel_id,
+                'PanelParticipant.leader' => 1,
+            ),
+        ));
+		if($leader) {
+			$leader = $leader['PanelParticipant']['user_id'];
+		} else {
+			$leader = 0;
+		}
+		$moderator = $this->PanelParticipant->find('first', array(
+			'conditions' => array(
+				'PanelParticipant.panel_id' => $panel_id,
+				'PanelParticipant.moderator' => 1,
+			),
+		));
+		if($moderator) {
+			$moderator = $moderator['PanelParticipant']['user_id'];
+		} else {
+			$moderator = 0;
+		}
+
+		$participants_by_id = $this->hashListByKey($participants, 'User', 'id');
+		$participant_ids = array_keys($participants_by_id);
+
+        $watchers_by_id = $this->hashListByKey($watchers, 'User', 'id');
+        $watcher_ids = array_keys($watchers_by_id);
+		
+		// Now get a list of users force-assigned to the panel (but not necessarily marked as available or interested)
+		$assigned_conditions = array(
+				'PanelParticipant.panel_id' => $panel_id,
+		);
+		if($participant_ids) {  // Filter out potential panelists already accounted for
+			$assigned_conditions[] = 'PanelParticipant.user_id NOT IN (' . implode(',', $participant_ids) . ')';
+		}
+		$non_avail_assigned = $this->PanelParticipant->find('all', array(
+			'conditions' => $assigned_conditions,
+			'joins' => array(
+				array(
+					'table' => 'users',
+					'alias' => 'User',
+					'type' => 'inner',
+					'foreignKey' => false,
+					'conditions' => array('PanelParticipant.user_id = User.id', 'PanelParticipant.watcher = 0'),
+				),
+			),
+		));
+		
+		if($participant_ids) {
+			$user_avoids = $this->UserAvoid->find('all', array(
+				'recursive' => 1,
+				'conditions' => array(
+					'UserAvoid.requester_id IN ('. implode(',', $participant_ids) . ')',
+				),
+			));
+			$user_avoids = $this->hashListByKey($user_avoids, 'UserAvoid', 'requester_id');
+			
+			$user_collabs = $this->UserCollab->find('all', array(
+				'recursive' => 1,
+				'conditions' => array(
+					'UserCollab.requester_id IN ('. implode(',', $participant_ids) . ')',
+				),
+			));
+			$user_collabs = $this->hashListByKey($user_collabs, 'UserCollab', 'requester_id');
+
+            $user_conflicts_watch = $this->PanelPref->find('all', array(
+                'recursive' => 1,
+                'conditions' => array(
+                    'PanelPref.user_id IN ('. implode(',', $participant_ids) . ')',
+                    'PanelPref.interest' => 1,
+                ),
+                'order' => array('PanelPref.panel_rating_id DESC', 'Panels.name'),
+                'joins' => array(
+                    array(
+                        'table' => 'panel_schedules',
+                        'alias' => 'PanelSchedule',
+                        'type' => 'inner',
+                        'foreignKey' => false,
+                        'conditions' => array(
+                            'PanelSchedule.panel_id = PanelPref.panel_id',
+                            'PanelSchedule.day_time_slot_id = ' . $slot_id,
+                        ),
+                    ),
+                    array(
+                        'table' => 'panels',
+                        'alias' => 'Panels',
+                        'type' => 'inner',
+                        'foreignKey' => false,
+                        'conditions' => array(
+                            'Panels.id = PanelPref.panel_id',
+                        ),
+                    ),
+                ),
+            ));
+            $user_conflicts_watch = $this->hashListByKey($user_conflicts_watch, 'PanelPref', 'user_id');
+
+            $user_conflicts_participate = $this->PanelPref->find('all', array(
+                'recursive' => 1,
+                'conditions' => array(
+                    'PanelPref.user_id IN ('. implode(',', $participant_ids) . ')',
+                    'PanelPref.interest' => 2,
+                    'PanelPref.panel_id != ' . $panel_id,
+                ),
+                'order' => array('PanelPref.panel_rating_id DESC', 'Panels.name'),
+                'joins' => array(
+                    array(
+                        'table' => 'panel_schedules',
+                        'alias' => 'PanelSchedule',
+                        'type' => 'inner',
+                        'foreignKey' => false,
+                        'conditions' => array(
+                            'PanelSchedule.panel_id = PanelPref.panel_id',
+                            'PanelSchedule.day_time_slot_id = ' . $slot_id,
+                        ),
+                    ),
+                    array(
+                        'table' => 'panels',
+                        'alias' => 'Panels',
+                        'type' => 'inner',
+                        'foreignKey' => false,
+                        'conditions' => array(
+                            'Panels.id = PanelPref.panel_id',
+                        ),
+                    ),
+                ),
+            ));
+            $user_conflicts_participate = $this->hashListByKey($user_conflicts_participate, 'PanelPref', 'user_id');
+
+			$this->PanelParticipant->unbindModel(array('belongsTo' => array('User')));
+            $user_conflicts_adjacent = $this->PanelParticipant->find('all', array(
+                'recursive' => 1,
+                'conditions' => array(
+                    'PanelParticipant.user_id IN ('. implode(',', $participant_ids) . ')',
+                    "OR" => array(
+                        'PanelParticipant.day_time_slot_id = ' . $previous_slot,
+                        'PanelParticipant.day_time_slot_id = ' . $next_slot,
+                    ),
+                ),
+                'order' => array('Panels.name'),
+                'joins' => array(
+                    array(
+                        'table' => 'panels',
+                        'alias' => 'Panels',
+                        'type' => 'inner',
+                        'foreignKey' => false,
+                        'conditions' => array(
+                            'Panels.id = PanelParticipant.panel_id',
+                        ),
+                    ),
+                    array(
+                        'table' => 'question_answers',
+                        'alias' => 'QuestionAnswer',
+                        'type' => 'inner',
+                        'foreignKey' => false,
+                        'conditions' => array(
+                            'QuestionAnswer.user_id = PanelParticipant.user_id',
+                            'QuestionAnswer.question_id' => 14, // Question: okay to have back-to-back panels?
+                            'QuestionAnswer.question_option_id' => 43, // Answer: not okay to have back-to-back panels!
+                        ),
+                    ),
+                ),
+            ));
+            $user_conflicts_adjacent = $this->hashListByKey($user_conflicts_adjacent, 'PanelParticipant', 'user_id');
+
+            $this->PanelParticipant->bindModel(array('hasOne' => array('PanelPref' => array(
+                'foreignKey' => false,
+                'conditions' => array(
+                    'PanelPref.user_id = PanelParticipant.user_id',
+                    'PanelPref.panel_id = PanelParticipant.panel_id',
+                ),
+            ))));
+            $user_conflicts_booked = $this->PanelParticipant->find('all', array(
+                'recursive' => 1,
+                'conditions' => array(
+                    'PanelParticipant.user_id IN ('. implode(',', $participant_ids) . ')',
+                    'PanelParticipant.day_time_slot_id = ' . $slot_id,
+                    'PanelParticipant.panel_id != ' . $panel_id,
+                ),
+                'order' => array('PanelPref.panel_rating_id DESC', 'Panels.name'),
+                'joins' => array(
+                    array(
+                        'table' => 'panels',
+                        'alias' => 'Panels',
+                        'type' => 'inner',
+                        'foreignKey' => false,
+                        'conditions' => array(
+                            'Panels.id = PanelParticipant.panel_id',
+                    ),
+                ),
+            )));
+            $user_conflicts_booked_panels = $this->hashListByKey($user_conflicts_booked, 'PanelParticipant', 'panel_id');
+            $booked_participant_panel_ids = array_keys($user_conflicts_booked_panels);
+            $user_conflicts_booked = $this->hashListByKey($user_conflicts_booked, 'PanelParticipant', 'user_id');
+            $booked_participant_ids = array_keys($user_conflicts_booked);
+
+            if($booked_participant_ids && $booked_participant_panel_ids) {
+                $booked_participant_ratings = $this->PanelPref->find('all', array(
+                    'recursive' => 1,
+                    'conditions' => array(
+                        'PanelPref.user_id IN ('. implode(',', $booked_participant_ids) . ')',
+                        'PanelPref.panel_id IN ('. implode(',', $booked_participant_panel_ids) . ')',
+                    ),
+                ));
+                $booked_participant_ratings = $this->hashListByKey($booked_participant_ratings, 'PanelPref', 'user_id');
+            } else {
+                $booked_participant_ratings= array();
+            }
+		} else {
+			$user_avoids = array();
+			$user_collabs = array();
+            $user_conflicts_watch = array();
+            $user_conflicts_participate = array();
+            $user_conflicts_adjacent= array();
+            $user_conflicts_booked= array();
+            $booked_participant_ratings= array();
+		}
+		
+		
+		$this->set(compact('panel', 'slot', 'rooms', 'participants', 'watchers', 
+            'leader', 'moderator', 'panelists_assigned', 'watchers_assigned', 
+            'user_avoids', 'user_collabs', 'user_conflicts_watch', 'user_conflicts_participate',
+            'user_conflicts_adjacent', 'user_conflicts_booked', 'booked_participant_ratings', 'participant_ids', 'watcher_ids', 'non_avail_assigned'));
+	}
+
+
+
+
+	//views
 	function avail_panelists() {
 		$panels = $this->Panel->find('all', array(
 			'conditions' => array('Panel.disabled' => 0),
@@ -353,11 +787,17 @@ class PanelsController extends AppController {
 		$slot_id = (int)$this->params['named']['slot'];
 		if(!$panel_id || !$slot_id) {
 			$this->Session->setFlash('Error: Panel or Slot not specified.');
-			$this->redirect(array('controller' => 'panels', 'action' => 'scheduled'));
+			$this->redirect(array('controller' => 'panels', 'action' => 'by_time'));
 		}
 		$slot = $this->DayTimeSlot->findById($slot_id);
 		$panel = $this->Panel->findById($panel_id);
 		$panel_length = $panel['PanelLength']['minutes'];
+
+		$rooms = array();
+		$user_conflicts_booked = array();
+		$this->define_participant_arrays($slot,$panel,$slot_id,$panel_id,$rooms,$user_conflicts_booked);
+
+
 		$success = TRUE;
 		// Incoming post data
 		if (!empty($this->data)) {
@@ -368,180 +808,16 @@ class PanelsController extends AppController {
 			));
 			
 			// Save panelists
-			if($this->data['PanelParticipant']) {
-				$this->PanelParticipant->create();
-				// Save Leader, if applicable
-				$leader_id = (int)$this->data['PanelParticipant']['leader'];
-				if($leader_id) {
-					$leader_data = array();
-					$leader_data['PanelParticipant']['day_time_slot_id'] = $slot_id;
-					$leader_data['PanelParticipant']['panel_id'] = $panel_id;
-					$leader_data['PanelParticipant']['user_id'] = $leader_id;
-					$leader_data['PanelParticipant']['leader'] = 1;
-					$this->PanelParticipant->save($leader_data); 
-				}
-				// Save Moderator, if applicable
-				$this->PanelParticipant->create();
-				$moderator_id = (int)$this->data['PanelParticipant']['moderator'];
-				if($moderator_id) {
-					$moderator_data = array();
-					$moderator_data['PanelParticipant']['day_time_slot_id'] = $slot_id;
-					$moderator_data['PanelParticipant']['panel_id'] = $panel_id;
-					$moderator_data['PanelParticipant']['user_id'] = $moderator_id;
-					$moderator_data['PanelParticipant']['moderator'] = 1;
-					$this->PanelParticipant->save($moderator_data);
-				}
-				// Save other panelists
-				if(array_key_exists('panelists', $this->data['PanelParticipant'])) {
-					$selected_panelists = $this->data['PanelParticipant']['panelists'];
-				} else {
-					$selected_panelists = array();
-				}
-				foreach($selected_panelists as $panelist_id) {
-					$panelist_id = (int)$panelist_id;
-					if(!$panelist_id) {
-						continue;
-					}
-					$this->PanelParticipant->create();
-					$panelist_data = array();
-					$panelist_data['PanelParticipant']['day_time_slot_id'] = $slot_id;
-					$panelist_data['PanelParticipant']['panel_id'] = $panel_id;
-					$panelist_data['PanelParticipant']['user_id'] = $panelist_id;
-					$panelist_data['PanelParticipant']['panelist'] = 1;
-					$this->PanelParticipant->save($panelist_data); 
-				}
-			}
+			$this->save_panelists($slot_id,$panel_id);
 			
 			if ($success) {
-				$this->Session->setFlash(__('The panelists have been saved', true));
-				$this->redirect(array('controller' => 'panels', 'action' => 'scheduled'));
+				$this->Session->setFlash(__('The panelists/watchers have been saved', true));
+				$this->redirect(array('controller' => 'panels', 'action' => 'by_time'));
 			} else {
 				$this->Session->setFlash(__($error_msg, true));
 			}
 		}
-		
-		$this->PanelPref->unbindModel(array('belongsTo' => array('Panel')));
-		$participants = $this->PanelPref->find('all', array(
-			'recursive' => 1,
-			'conditions' => array(
-				'PanelPref.panel_id' => $panel_id,
-				'PanelPref.interest' => 2,
-				"OR" => array(
-					'PanelParticipant.id' => NULL,
-					'PanelParticipant.panel_id' => $panel_id,
-				),
-			),
-			'order' => array('PanelPref.panel_rating_id DESC', 'User.name'),
-			'joins' => array(
-				array(
-					'table' => 'users',
-					'alias' => 'User',
-					'type' => 'inner',
-					'foreignKey' => false,
-					'conditions' => array('PanelPref.user_id = User.id'),
-				),
-				array(
-					'table' => 'user_time_slots',
-					'alias' => 'UserTimeSlot',
-					'type' => 'inner',
-					'foreignKey' => false,
-					'conditions' => array(
-						'UserTimeSlot.user_id = User.id',
-						'UserTimeSlot.day_time_slot_id = ' . $slot_id,
-						'UserTimeSlot.available = 1',
-					),
-				),
-				array(
-					'table' => 'panel_participants',
-					'alias' => 'PanelParticipant',
-					'type' => 'left outer',
-					'foreignKey' => false,
-					'conditions' => array(
-						'PanelParticipant.user_id = User.id',
-						'PanelParticipant.day_time_slot_id = ' . $slot_id,
-					),
-				),
-			),
-		));
-		$panelists_assigned = $this->PanelParticipant->find('all', array(
-			'conditions' => array(
-				'PanelParticipant.panel_id' => $panel_id,
-			),
-			'recursive' => -1,
-		));
-		$panelists_assigned = $this->hashByKey($panelists_assigned, 'PanelParticipant', 'user_id');
-		$leader = $this->PanelParticipant->find('first', array(
-			'conditions' => array(
-				'PanelParticipant.panel_id' => $panel_id,
-				'PanelParticipant.leader' => 1,
-			),
-		));
-		if($leader) {
-			$leader = $leader['PanelParticipant']['user_id'];
-		} else {
-			$leader = 0;
-		}
-		$moderator = $this->PanelParticipant->find('first', array(
-			'conditions' => array(
-				'PanelParticipant.panel_id' => $panel_id,
-				'PanelParticipant.moderator' => 1,
-			),
-		));
-		if($moderator) {
-			$moderator = $moderator['PanelParticipant']['user_id'];
-		} else {
-			$moderator = 0;
-		}
-		
-		
-		$participants_by_id = $this->hashListByKey($participants, 'User', 'id');
-		$participant_ids = array_keys($participants_by_id);
-		
-		// Now get a list of users force-assigned to the panel (but not necessarily marked as available etc)
-		$assigned_conditions = array(
-				'PanelParticipant.panel_id' => $panel_id,
-		);
-		if($participant_ids) {  // Filter out potential panelists already accounted for
-			$assigned_conditions[] = 'PanelParticipant.user_id NOT IN (' . implode(',', $participant_ids) . ')';
-		}
-		$non_avail_assigned = $this->PanelParticipant->find('all', array(
-			'conditions' => $assigned_conditions,
-			'joins' => array(
-				array(
-					'table' => 'users',
-					'alias' => 'User',
-					'type' => 'inner',
-					'foreignKey' => false,
-					'conditions' => array('PanelParticipant.user_id = User.id'),
-				),
-			),
-		));
-		
-		if($participant_ids) {
-			$user_avoids = $this->UserAvoid->find('all', array(
-				'recursive' => 1,
-				'conditions' => array(
-					'UserAvoid.requester_id IN ('. implode(',', $participant_ids) . ')',
-				),
-			));
-			$user_avoids = $this->hashListByKey($user_avoids, 'UserAvoid', 'requester_id');
-			
-			$user_collabs = $this->UserCollab->find('all', array(
-				'recursive' => 1,
-				'conditions' => array(
-					'UserCollab.requester_id IN ('. implode(',', $participant_ids) . ')',
-				),
-			));
-			$user_collabs = $this->hashListByKey($user_collabs, 'UserCollab', 'requester_id');
-		} else {
-			$user_avoids = array();
-			$user_collabs = array();
-		}
-		
-		
-		$this->set(compact('panel', 'slot', 'participants', 'leader', 'moderator', 'panelists_assigned', 
-			'user_avoids', 'user_collabs', 'participant_ids', 'non_avail_assigned'));
-		
+
 	}
 	
 	function panelist_index() {
@@ -604,6 +880,8 @@ class PanelsController extends AppController {
 	function schedule_new() {
 		$panel_id = (int)$this->params['named']['panel'];
 		$slot_id = (int)$this->params['named']['slot'];
+        $next_slot = $slot_id + 1;
+        $previous_slot = $slot_id - 1;
 		if(!$panel_id || !$slot_id) {
 			$this->Session->setFlash('Error: Panel or Slot not specified.');
 			$this->redirect(array('controller' => 'panels', 'action' => 'by_time'));
@@ -611,6 +889,25 @@ class PanelsController extends AppController {
 		$slot = $this->DayTimeSlot->findById($slot_id);
 		$panel = $this->Panel->findById($panel_id);
 		$panel_length = $panel['PanelLength']['minutes'];
+
+		$assigned_rooms = $this->PanelSchedule->find('all', array(
+			'fields' => array('PanelSchedule.room_id'),
+			'conditions' => array('PanelSchedule.day_time_slot_id' => $slot_id),
+		));
+		$room_options = array();
+		$assigned_rooms = $this->hashByKey($assigned_rooms, 'PanelSchedule', 'room_id');
+		if($assigned_rooms) {
+			$assigned_rooms = array_keys($assigned_rooms);
+			$assigned_rooms = implode(',', $assigned_rooms);
+			$room_options['conditions'] = array(
+				'Room.id NOT IN (' . $assigned_rooms . ')'
+			);
+		}
+
+		$rooms = $this->PanelSchedule->Room->find('list', $room_options);
+		$user_conflicts_booked = array();
+		$this->define_participant_arrays($slot,$panel,$slot_id,$panel_id,$rooms,$user_conflicts_booked);
+
 		// Incoming post data
 		if (!empty($this->data)) {
 			$error_msg = 'The panel could not be scheduled for this room and time slot. Please, try again.';
@@ -632,49 +929,7 @@ class PanelsController extends AppController {
 			}
 			
 			// Now save panelists
-			if($this->data['PanelParticipant']) {
-				$this->PanelParticipant->create();
-				// Save Leader, if applicable
-				$leader_id = (int)$this->data['PanelParticipant']['leader'];
-				if($leader_id) {
-					$leader_data = array();
-					$leader_data['PanelParticipant']['day_time_slot_id'] = $slot_id;
-					$leader_data['PanelParticipant']['panel_id'] = $panel_id;
-					$leader_data['PanelParticipant']['user_id'] = $leader_id;
-					$leader_data['PanelParticipant']['leader'] = 1;
-					$this->PanelParticipant->save($leader_data); 
-				}
-				// Save Moderator, if applicable
-				$this->PanelParticipant->create();
-				$moderator_id = (int)$this->data['PanelParticipant']['moderator'];
-				if($moderator_id) {
-					$moderator_data = array();
-					$moderator_data['PanelParticipant']['day_time_slot_id'] = $slot_id;
-					$moderator_data['PanelParticipant']['panel_id'] = $panel_id;
-					$moderator_data['PanelParticipant']['user_id'] = $moderator_id;
-					$moderator_data['PanelParticipant']['moderator'] = 1;
-					$this->PanelParticipant->save($moderator_data);
-				}
-				// Save other panelists
-				if(array_key_exists('panelists', $this->data['PanelParticipant'])) {
-					$selected_panelists = $this->data['PanelParticipant']['panelists'];
-				} else {
-					$selected_panelists = array();
-				}
-				foreach($selected_panelists as $panelist_id) {
-					$panelist_id = (int)$panelist_id;
-					if(!$panelist_id) {
-						continue;
-					}
-					$this->PanelParticipant->create();
-					$panelist_data = array();
-					$panelist_data['PanelParticipant']['day_time_slot_id'] = $slot_id;
-					$panelist_data['PanelParticipant']['panel_id'] = $panel_id;
-					$panelist_data['PanelParticipant']['user_id'] = $panelist_id;
-					$panelist_data['PanelParticipant']['panelist'] = 1;
-					$this->PanelParticipant->save($panelist_data); 
-				}
-			}
+			$this->save_panelists($slot_id,$panel_id);
 			
 			if ($success) {
 				$this->Session->setFlash(__('The panel has been scheduled', true));
@@ -683,114 +938,11 @@ class PanelsController extends AppController {
 				$this->Session->setFlash(__($error_msg, true));
 			}
 		}
-		$assigned_rooms = $this->PanelSchedule->find('all', array(
-			'fields' => array('PanelSchedule.room_id'),
-			'conditions' => array('PanelSchedule.day_time_slot_id' => $slot_id),
-		));
-		$room_options = array();
-		$assigned_rooms = $this->hashByKey($assigned_rooms, 'PanelSchedule', 'room_id');
-		if($assigned_rooms) {
-			$assigned_rooms = array_keys($assigned_rooms);
-			$assigned_rooms = implode(',', $assigned_rooms);
-			$room_options['conditions'] = array(
-				'Room.id NOT IN (' . $assigned_rooms . ')'
-			);
-		}
 		
 //		$panelists_scheduled_for_slot = $this->PanelParticipant->find('all', array(
 //			'recursive' => 0,
 //			'fields' => array('PanelParticipant.user_id')
 //		));
-		
-		$rooms = $this->PanelSchedule->Room->find('list', $room_options);
-		$this->PanelPref->unbindModel(array('belongsTo' => array('Panel')));
-		$participants = $this->PanelPref->find('all', array(
-			'recursive' => 1,
-			'conditions' => array(
-				'PanelPref.panel_id' => $panel_id,
-				'PanelPref.interest' => 2,
-				'PanelParticipant.id' => NULL,
-			),
-			'order' => array('PanelPref.panel_rating_id DESC', 'User.name'),
-			'joins' => array(
-				array(
-					'table' => 'users',
-					'alias' => 'User',
-					'type' => 'inner',
-					'foreignKey' => false,
-					'conditions' => array('PanelPref.user_id = User.id'),
-				),
-				array(
-					'table' => 'user_time_slots',
-					'alias' => 'UserTimeSlot',
-					'type' => 'inner',
-					'foreignKey' => false,
-					'conditions' => array(
-						'UserTimeSlot.user_id = User.id',
-						'UserTimeSlot.day_time_slot_id = ' . $slot_id,
-						'UserTimeSlot.available = 1',
-					),
-				),
-				array(
-					'table' => 'panel_participants',
-					'alias' => 'PanelParticipant',
-					'type' => 'left outer',
-					'foreignKey' => false,
-					'conditions' => array(
-						'PanelParticipant.user_id = User.id',
-						'PanelParticipant.day_time_slot_id = ' . $slot_id,
-					),
-				),
-			),
-		));
-		
-		$panelists_assigned = $this->PanelParticipant->find('all', array(
-			'conditions' => array(
-				'PanelParticipant.panel_id' => $panel_id,
-			),
-			'recursive' => -1,
-		));
-		$panelists_assigned = $this->hashByKey($panelists_assigned, 'PanelParticipant', 'user_id');
-		$leader = $this->PanelParticipant->find('first', array(
-			'conditions' => array(
-				'PanelParticipant.panel_id' => $panel_id,
-				'PanelParticipant.leader' => 1,
-			),
-		));
-		if($leader) {
-			$leader = $leader['PanelParticipant']['user_id'];
-		} else {
-			$leader = 0;
-		}
-		$moderator = $this->PanelParticipant->find('first', array(
-			'conditions' => array(
-				'PanelParticipant.panel_id' => $panel_id,
-				'PanelParticipant.moderator' => 1,
-			),
-		));
-		if($moderator) {
-			$moderator = $moderator['PanelParticipant']['user_id'];
-		} else {
-			$moderator = 0;
-		}
-		$participant_ids = array_keys($this->hashListByKey($participants, 'User', 'id'));
-		$user_avoids = $this->UserAvoid->find('all', array(
-			'recursive' => 1,
-			'conditions' => array(
-				'UserAvoid.requester_id IN ('. implode(',', $participant_ids) . ')',
-			),
-		));
-		$user_avoids = $this->hashListByKey($user_avoids, 'UserAvoid', 'requester_id');
-		
-		$user_collabs = $this->UserCollab->find('all', array(
-			'recursive' => 1,
-			'conditions' => array(
-				'UserCollab.requester_id IN ('. implode(',', $participant_ids) . ')',
-			),
-		));
-		$user_collabs = $this->hashListByKey($user_collabs, 'UserCollab', 'requester_id');
-		
-		$this->set(compact('panel', 'slot', 'rooms', 'participants', 'leader', 'moderator', 'panelists_assigned', 'user_avoids', 'user_collabs', 'participant_ids'));
 	}
 	
 	function schedule_sheets() {

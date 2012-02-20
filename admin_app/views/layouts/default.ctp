@@ -10,7 +10,8 @@
 <?php 
 echo $this->Html->css('cake.generic');
 echo $scripts_for_layout; 
-echo $this->Html->script(array('jquery-1.6.1.min','jquery.progressbar.min','jquery.progressbar'));
+echo $this->Html->script(array('jquery-1.6.1.min','jquery.progressbar.min',
+	'jquery.progressbar','participant_conflicts','jquery-ui-1.8.17.custom.min'));
 ?>
 </head>
 <body>
